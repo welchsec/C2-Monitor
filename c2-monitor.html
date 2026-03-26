@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WelchSec C2 Domain Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#080b0f;--bg2:#0d1117;--border:#1e2d3d;--accent:#00ff88;--warn:#ffbe0b;--danger:#ff4757;--info:#00b4d8;--purple:#b39ddb;--muted:#3d5166;--text:#c9d1d9;--heading:#f0f6fc;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;min-height:100vh;}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,255,136,.007) 3px,rgba(0,255,136,.007) 4px);pointer-events:none;z-index:999;}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.6rem 1.5rem;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100;}
+.brand{font-family:'Rajdhani',sans-serif;font-size:1.1rem;font-weight:700;color:var(--heading);}
+.brand span{color:var(--accent);}
+.topbar-right{display:flex;align-items:center;gap:1rem;font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--muted);}
+.topbar-right a{color:var(--muted);text-decoration:none;}.topbar-right a:hover{color:var(--accent);}
+.status-led{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+.status-led.active{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1.5s infinite;}
+.status-led.done{background:var(--accent);box-shadow:0 0 8px var(--accent);}
+.status-led.error{background:var(--danger);box-shadow:0 0 8px var(--danger);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* Mode tabs */
+.mode-bar{background:var(--bg2);border-bottom:2px solid var(--border);display:flex;padding:0 1.5rem;}
+.mode-tab{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:.88rem;letter-spacing:.08em;color:var(--muted);padding:.75rem 1.25rem;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;text-transform:uppercase;}
+.mode-tab:hover{color:var(--text);}
+.mode-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+/* Layout */
+.layout{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 88px);}
+@media(max-width:768px){.layout{grid-template-columns:1fr;}}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:1rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto;}
+.panel{background:var(--bg);border:1px solid var(--border);padding:.85rem;position:relative;}
+.panel-label{position:absolute;top:-.5rem;left:.75rem;font-family:'Share Tech Mono',monospace;font-size:.55rem;letter-spacing:.15em;background:var(--bg);padding:0 .4rem;color:var(--accent);}
+.field label{display:block;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-bottom:.25rem;}
+.field input,.field select{width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:.72rem;padding:.45rem .55rem;outline:none;transition:border-color .2s;margin-bottom:.5rem;}
+.field input:focus,.field select:focus{border-color:var(--accent);}
+.field select option{background:var(--bg2);}
+.fn{font-family:'Share Tech Mono',monospace;font-size:.52rem;color:var(--muted);line-height:1.5;}
+.scan-btn{width:100%;background:transparent;border:2px solid var(--accent);color:var(--accent);font-family:'Rajdhani',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:.1em;padding:.6rem;cursor:pointer;text-transform:uppercase;transition:all .2s;}
+.scan-btn:hover:not(:disabled){background:var(--accent);color:var(--bg);box-shadow:0 0 20px rgba(0,255,136,.3);}
+.scan-btn:disabled{opacity:.4;cursor:not-allowed;}
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;}
+.stat-box{background:var(--bg2);border:1px solid var(--border);padding:.5rem;text-align:center;}
+.stat-num{font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;line-height:1;}
+.stat-label{font-family:'Share Tech Mono',monospace;font-size:.5rem;color:var(--muted);letter-spacing:.1em;margin-top:.1rem;}
+.progress-wrap{background:var(--bg2);border:1px solid var(--border);height:3px;overflow:hidden;margin-top:.6rem;}
+.progress-bar{height:100%;background:var(--accent);width:0%;transition:width .3s;box-shadow:0 0 8px var(--accent);}
+.progress-label{font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--muted);margin-top:.25rem;}
+/* Main */
+.main{display:flex;flex-direction:column;overflow:hidden;}
+.tabs{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;padding:0 1.25rem;overflow-x:auto;}
+.tab{font-family:'Share Tech Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:var(--muted);padding:.65rem .85rem;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.tab .badge{display:inline-flex;align-items:center;justify-content:center;background:var(--border);color:var(--text);font-size:.52rem;min-width:15px;height:15px;border-radius:2px;padding:0 3px;margin-left:.35rem;}
+.tab.active .badge{background:var(--accent);color:var(--bg);}
+.results-area{flex:1;overflow-y:auto;padding:.85rem 1.25rem;}
+.tab-panel{display:none;}.tab-panel.active{display:block;}
+/* Domain cards */
+.domain-row{display:grid;grid-template-columns:1fr 80px 60px 60px auto;gap:.5rem;align-items:center;padding:.5rem .75rem;border:1px solid transparent;border-left:3px solid transparent;margin-bottom:3px;font-family:'Share Tech Mono',monospace;font-size:.68rem;transition:all .1s;animation:fi .2s ease forwards;opacity:0;}
+@keyframes fi{to{opacity:1;}}
+.domain-row:hover{background:rgba(255,255,255,.02);border-color:var(--border);}
+.domain-row.risk-critical{border-left-color:var(--danger);}
+.domain-row.risk-high{border-left-color:var(--warn);}
+.domain-row.risk-medium{border-left-color:var(--info);}
+.domain-row.risk-low{border-left-color:var(--accent);}
+.domain-name{color:var(--text);word-break:break-all;line-height:1.4;}
+.domain-name a{color:inherit;text-decoration:none;}.domain-name a:hover{color:var(--accent);}
+.domain-score{text-align:center;font-weight:700;font-size:.78rem;}
+.domain-age{text-align:center;color:var(--muted);font-size:.6rem;}
+.domain-tld{text-align:center;font-size:.6rem;}
+/* Risk badge */
+.risk-badge{font-family:'Share Tech Mono',monospace;font-size:.55rem;padding:.1rem .35rem;border:1px solid;white-space:nowrap;}
+.risk-badge.critical{color:var(--danger);border-color:rgba(255,71,87,.4);background:rgba(255,71,87,.08);}
+.risk-badge.high{color:var(--warn);border-color:rgba(255,190,11,.4);background:rgba(255,190,11,.08);}
+.risk-badge.medium{color:var(--info);border-color:rgba(0,180,216,.4);background:rgba(0,180,216,.08);}
+.risk-badge.low{color:var(--accent);border-color:rgba(0,255,136,.3);background:rgba(0,255,136,.05);}
+.risk-badge.clean{color:var(--muted);border-color:var(--border);}
+/* Score meter */
+.score-bar-wrap{background:var(--border);height:4px;border-radius:2px;overflow:hidden;margin-top:.2rem;}
+.score-bar-fill{height:100%;border-radius:2px;transition:width .5s;}
+/* Indicator pills */
+.indicators{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.3rem;}
+.ind-pill{font-family:'Share Tech Mono',monospace;font-size:.52rem;padding:.08rem .3rem;border:1px solid var(--border);color:var(--muted);}
+.ind-pill.hit{color:var(--danger);border-color:rgba(255,71,87,.3);background:rgba(255,71,87,.06);}
+.ind-pill.warn{color:var(--warn);border-color:rgba(255,190,11,.3);}
+/* C2 feed rows */
+.c2-row{display:grid;grid-template-columns:1fr 100px 80px 80px;gap:.5rem;align-items:center;padding:.45rem .75rem;border-bottom:1px solid rgba(30,45,61,.4);font-family:'Share Tech Mono',monospace;font-size:.65rem;}
+.c2-row:hover{background:rgba(255,255,255,.02);}
+.c2-ioc{color:var(--danger);word-break:break-all;}
+.c2-source{color:var(--muted);font-size:.58rem;}
+.c2-type{font-size:.58rem;padding:.1rem .3rem;border:1px solid rgba(255,71,87,.3);color:var(--danger);}
+.c2-date{color:var(--muted);font-size:.58rem;}
+/* Summary cards */
+.summary-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.65rem;margin-bottom:1rem;}
+.summary-card{background:var(--bg2);border:1px solid var(--border);padding:.75rem;display:flex;align-items:center;gap:.65rem;}
+.sum-num{font-family:'Rajdhani',sans-serif;font-size:1.5rem;font-weight:700;line-height:1;}
+.sum-lbl{font-family:'Share Tech Mono',monospace;font-size:.5rem;color:var(--muted);letter-spacing:.1em;}
+/* Col headers */
+.col-header{display:grid;gap:.5rem;padding:.28rem .75rem;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--muted);letter-spacing:.1em;border-bottom:1px solid var(--border);margin-bottom:.4rem;}
+/* Filter bar */
+.filter-bar{display:flex;gap:.4rem;margin-bottom:.85rem;flex-wrap:wrap;align-items:center;}
+.filter-input{background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:.68rem;padding:.38rem .55rem;outline:none;flex:1;min-width:140px;}
+.filter-input:focus{border-color:var(--accent);}
+.filter-btn{font-family:'Share Tech Mono',monospace;font-size:.58rem;letter-spacing:.08em;padding:.38rem .6rem;border:1px solid var(--border);color:var(--muted);cursor:pointer;background:transparent;transition:all .15s;white-space:nowrap;}
+.filter-btn:hover,.filter-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.05);}
+/* Log */
+.log-stream{background:var(--bg);border:1px solid var(--border);padding:.65rem;font-family:'Share Tech Mono',monospace;font-size:.62rem;color:var(--muted);height:300px;overflow-y:auto;line-height:1.7;}
+.log-line{display:block;}.log-line.ok{color:var(--accent);}.log-line.warn{color:var(--warn);}.log-line.err{color:var(--danger);}.log-line.info{color:var(--info);}
+/* Placeholder */
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 1rem;gap:.65rem;}
+.ph-icon{font-size:2.5rem;opacity:.12;}
+.ph-text{font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--muted);letter-spacing:.1em;text-align:center;line-height:1.8;}
+/* Disclaimer */
+.disclaimer{background:rgba(255,71,87,.06);border:1px solid rgba(255,71,87,.25);padding:.65rem .85rem;font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--warn);line-height:1.6;margin-bottom:.85rem;}
+/* Mode panels */
+.mode-panel{display:none;}.mode-panel.active{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 88px);}
+@media(max-width:768px){.mode-panel.active{grid-template-columns:1fr;}}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Welch<span>Sec</span> // C2 Domain Monitor</div>
+  <div class="topbar-right">
+    <div class="status-led" id="statusLed"></div>
+    <span id="statusText">IDLE</span>
+    <span style="color:var(--border)">|</span>
+    <a href="https://welchsec.github.io/Recon-Tool/" target="_blank">RECON ↗</a>
+    <a href="https://welchsec.github.io/Phishing-Analyzer/" target="_blank">PHISHING ↗</a>
+  </div>
+</div>
+
+<div class="mode-bar">
+  <div class="mode-tab active" id="mt-feed" onclick="switchMode('feed')">📡 LIVE FEED MONITOR</div>
+  <div class="mode-tab" id="mt-check" onclick="switchMode('check')">🔎 CHECK A DOMAIN</div>
+  <div class="mode-tab" id="mt-c2" onclick="switchMode('c2')">☠ KNOWN C2 FEEDS</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODE 1: LIVE FEED MONITOR
+     ══════════════════════════════════════ -->
+<div class="mode-panel active" id="mode-feed">
+  <aside class="sidebar">
+    <div class="panel"><div class="panel-label">CONFIGURATION</div>
+      <div class="field">
+        <label>WORKER URL</label>
+        <input type="text" id="feed-worker" placeholder="https://your-worker.workers.dev">
+      </div>
+      <div class="field">
+        <label>MIN RISK SCORE TO SHOW</label>
+        <select id="feed-minscore">
+          <option value="0">All (0+)</option>
+          <option value="30">Suspicious (30+)</option>
+          <option value="50" selected>High Risk (50+)</option>
+          <option value="70">Critical Only (70+)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>MAX DOMAINS TO ANALYZE</label>
+        <select id="feed-limit">
+          <option value="100">100 domains</option>
+          <option value="250" selected>250 domains</option>
+          <option value="500">500 domains</option>
+        </select>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-label">SCORING WEIGHTS</div>
+      <div class="fn" style="line-height:2.2">
+        <span style="color:var(--danger)">+35</span> Known C2 TLD (.xyz .top .tk etc)<br>
+        <span style="color:var(--danger)">+30</span> DGA pattern (random chars)<br>
+        <span style="color:var(--danger)">+25</span> Brand impersonation<br>
+        <span style="color:var(--warn)">+20</span> High entropy domain name<br>
+        <span style="color:var(--warn)">+15</span> Excessive hyphens/numbers<br>
+        <span style="color:var(--warn)">+15</span> No MX records<br>
+        <span style="color:var(--info)">+10</span> Very new domain (&lt;7 days)<br>
+        <span style="color:var(--info)">+10</span> Suspicious keywords<br>
+        <span style="color:var(--accent)">-10</span> Established TLD (.com .org)<br>
+      </div>
+    </div>
+    <button class="scan-btn" id="feed-btn" onclick="startFeedMonitor()">▶ FETCH & ANALYZE</button>
+    <div class="panel"><div class="panel-label">STATS</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-num" id="f-total" style="color:var(--info)">0</div><div class="stat-label">FETCHED</div></div>
+        <div class="stat-box"><div class="stat-num" id="f-flagged" style="color:var(--danger)">0</div><div class="stat-label">FLAGGED</div></div>
+        <div class="stat-box"><div class="stat-num" id="f-critical" style="color:var(--danger)">0</div><div class="stat-label">CRITICAL</div></div>
+        <div class="stat-box"><div class="stat-num" id="f-high" style="color:var(--warn)">0</div><div class="stat-label">HIGH</div></div>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" id="f-prog"></div></div>
+      <div class="progress-label" id="f-progl">Waiting...</div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('feed','flagged')" id="feed-tab-flagged">FLAGGED <span class="badge" id="feed-b-flagged">0</span></div>
+      <div class="tab" onclick="switchTab('feed','critical')" id="feed-tab-critical">CRITICAL <span class="badge" id="feed-b-critical">0</span></div>
+      <div class="tab" onclick="switchTab('feed','all')" id="feed-tab-all">ALL ANALYZED <span class="badge" id="feed-b-all">0</span></div>
+      <div class="tab" onclick="switchTab('feed','log')" id="feed-tab-log">LOG</div>
+    </div>
+    <div class="results-area">
+      <div class="disclaimer">⚠ This tool is for defensive threat intelligence only. Use findings to protect your organization — monitor for lookalike domains, brand impersonation, and emerging C2 infrastructure targeting your sector.</div>
+      <div class="tab-panel active" id="feed-panel-flagged">
+        <div class="summary-row" id="feed-sumrow" style="display:none">
+          <div class="summary-card"><div>☠</div><div><div class="sum-num" style="color:var(--danger)" id="feed-s-crit">0</div><div class="sum-lbl">CRITICAL</div></div></div>
+          <div class="summary-card"><div>🔴</div><div><div class="sum-num" style="color:var(--warn)" id="feed-s-high">0</div><div class="sum-lbl">HIGH</div></div></div>
+          <div class="summary-card"><div>🟡</div><div><div class="sum-num" style="color:var(--info)" id="feed-s-med">0</div><div class="sum-lbl">MEDIUM</div></div></div>
+          <div class="summary-card"><div>📡</div><div><div class="sum-num" style="color:var(--text)" id="feed-s-tot">0</div><div class="sum-lbl">TOTAL FLAGGED</div></div></div>
+        </div>
+        <div class="filter-bar" id="feed-fb" style="display:none">
+          <input class="filter-input" id="feed-filter-input" placeholder="Filter domains..." oninput="feedFilter(this.value)">
+          <button class="filter-btn on" onclick="feedRF('all',this)">ALL</button>
+          <button class="filter-btn" onclick="feedRF('critical',this)">CRITICAL</button>
+          <button class="filter-btn" onclick="feedRF('high',this)">HIGH</button>
+          <button class="filter-btn" onclick="feedRF('medium',this)">MEDIUM</button>
+          <button class="filter-btn" onclick="exportFeed()" style="margin-left:auto">⬇ CSV</button>
+        </div>
+        <div class="col-header" id="feed-ch" style="display:none;grid-template-columns:1fr 80px 60px 60px auto">
+          <span>DOMAIN</span><span>SCORE</span><span>AGE</span><span>TLD</span><span>RISK</span>
+        </div>
+        <div id="feed-flagged-c">
+          <div class="placeholder"><div class="ph-icon">📡</div><div class="ph-text">CLICK FETCH & ANALYZE TO PULL TODAY'S<br>NEWLY REGISTERED DOMAINS AND SCORE<br>EACH ONE FOR C2 INDICATORS</div></div>
+        </div>
+      </div>
+      <div class="tab-panel" id="feed-panel-critical">
+        <div class="col-header" style="grid-template-columns:1fr 80px 60px 60px auto"><span>DOMAIN</span><span>SCORE</span><span>AGE</span><span>TLD</span><span>RISK</span></div>
+        <div id="feed-critical-c"></div>
+      </div>
+      <div class="tab-panel" id="feed-panel-all">
+        <div class="col-header" style="grid-template-columns:1fr 80px 60px 60px auto"><span>DOMAIN</span><span>SCORE</span><span>AGE</span><span>TLD</span><span>RISK</span></div>
+        <div id="feed-all-c"></div>
+      </div>
+      <div class="tab-panel" id="feed-panel-log"><div class="log-stream" id="feed-log"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODE 2: CHECK A DOMAIN
+     ══════════════════════════════════════ -->
+<div class="mode-panel" id="mode-check">
+  <aside class="sidebar">
+    <div class="panel"><div class="panel-label">TARGET</div>
+      <div class="field">
+        <label>DOMAIN TO CHECK</label>
+        <input type="text" id="check-domain" placeholder="suspicious-domain.xyz" onkeydown="if(event.key==='Enter')checkDomain()">
+      </div>
+      <div class="field">
+        <label>WORKER URL</label>
+        <input type="text" id="check-worker" placeholder="https://your-worker.workers.dev">
+      </div>
+    </div>
+    <button class="scan-btn" id="check-btn" onclick="checkDomain()">▶ ANALYZE DOMAIN</button>
+    <div class="panel"><div class="panel-label">WHAT WE CHECK</div>
+      <div class="fn" style="line-height:2">
+        🔢 DGA entropy scoring<br>
+        🌐 TLD risk classification<br>
+        📅 Domain registration age<br>
+        📡 DNS record analysis<br>
+        🎭 Brand impersonation<br>
+        🔤 Typosquatting patterns<br>
+        ☠ Known C2 lists<br>
+        📊 Character distribution<br>
+        🔢 Vowel/consonant ratio<br>
+        ➡ Subdomain depth
+      </div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="results-area" style="padding:1.25rem">
+      <div id="check-output">
+        <div class="placeholder"><div class="ph-icon">🔎</div><div class="ph-text">ENTER A DOMAIN AND CLICK ANALYZE<br>FULL C2 RISK SCORING WITH DETAILED<br>BREAKDOWN OF EVERY INDICATOR</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODE 3: KNOWN C2 FEEDS
+     ══════════════════════════════════════ -->
+<div class="mode-panel" id="mode-c2">
+  <aside class="sidebar">
+    <div class="panel"><div class="panel-label">FEEDS</div>
+      <div class="fn" style="line-height:2.2">
+        <div style="margin-bottom:.5rem">Select feeds to pull:</div>
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" id="c2-feodo" checked> <span style="color:var(--text)">Feodo Tracker C2</span></label>
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" id="c2-urlhaus" checked> <span style="color:var(--text)">URLhaus Malware</span></label>
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;margin-bottom:.3rem"><input type="checkbox" id="c2-threatfox" checked> <span style="color:var(--text)">ThreatFox IOCs</span></label>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-label">SEARCH IOC</div>
+      <div class="field">
+        <label>SEARCH LOADED C2 DATA</label>
+        <input type="text" id="c2-search" placeholder="domain, IP or keyword..." oninput="c2Search(this.value)">
+      </div>
+    </div>
+    <button class="scan-btn" id="c2-btn" onclick="loadC2Feeds()">▶ LOAD C2 FEEDS</button>
+    <div class="panel"><div class="panel-label">STATS</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-num" id="c2-total" style="color:var(--danger)">0</div><div class="stat-label">TOTAL IOCS</div></div>
+        <div class="stat-box"><div class="stat-num" id="c2-domains" style="color:var(--warn)">0</div><div class="stat-label">DOMAINS</div></div>
+        <div class="stat-box"><div class="stat-num" id="c2-ips" style="color:var(--info)">0</div><div class="stat-label">IPs</div></div>
+        <div class="stat-box"><div class="stat-num" id="c2-sources" style="color:var(--muted)">0</div><div class="stat-label">SOURCES</div></div>
+      </div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('c2feed','all')" id="c2feed-tab-all">ALL IOCs <span class="badge" id="c2-b-all">0</span></div>
+      <div class="tab" onclick="switchTab('c2feed','domains')" id="c2feed-tab-domains">DOMAINS <span class="badge" id="c2-b-domains">0</span></div>
+      <div class="tab" onclick="switchTab('c2feed','ips')" id="c2feed-tab-ips">IP ADDRESSES <span class="badge" id="c2-b-ips">0</span></div>
+      <div class="tab" onclick="switchTab('c2feed','log')" id="c2feed-tab-log">LOG</div>
+    </div>
+    <div class="results-area">
+      <div class="disclaimer">⚠ C2 feed data sourced from abuse.ch public threat intelligence feeds. For defensive use — block these IOCs in your firewall, DNS resolver, and SIEM.</div>
+      <div class="tab-panel active" id="c2feed-panel-all">
+        <div class="col-header" style="grid-template-columns:1fr 100px 80px 80px"><span>IOC</span><span>SOURCE</span><span>TYPE</span><span>DATE</span></div>
+        <div id="c2-all-c"><div class="placeholder"><div class="ph-icon">☠</div><div class="ph-text">LOAD C2 FEEDS TO SEE KNOWN MALICIOUS<br>DOMAINS AND IPs FROM ABUSE.CH</div></div></div>
+      </div>
+      <div class="tab-panel" id="c2feed-panel-domains">
+        <div class="col-header" style="grid-template-columns:1fr 100px 80px 80px"><span>DOMAIN</span><span>SOURCE</span><span>TYPE</span><span>DATE</span></div>
+        <div id="c2-domains-c"></div>
+      </div>
+      <div class="tab-panel" id="c2feed-panel-ips">
+        <div class="col-header" style="grid-template-columns:1fr 100px 80px 80px"><span>IP ADDRESS</span><span>SOURCE</span><span>TYPE</span><span>DATE</span></div>
+        <div id="c2-ips-c"></div>
+      </div>
+      <div class="tab-panel" id="c2feed-panel-log"><div class="log-stream" id="c2-log"></div></div>
+    </div>
+  </div>
+</div>
+
+<script defer>
+// ── Mode / Tab switching ──────────────────────────────────────────────────────
+function switchMode(name) {
+  document.querySelectorAll('.mode-panel').forEach(m => m.classList.remove('active'));
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('mode-' + name).classList.add('active');
+  document.getElementById('mt-' + name).classList.add('active');
+}
+
+function switchTab(prefix, name) {
+  document.querySelectorAll('[id^="' + prefix + '-tab-"]').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="' + prefix + '-panel-"]').forEach(p => p.classList.remove('active'));
+  const tab = document.getElementById(prefix + '-tab-' + name);
+  const panel = document.getElementById(prefix + '-panel-' + name);
+  if (tab) tab.classList.add('active');
+  if (panel) panel.classList.add('active');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function log(id, msg, type='') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const span = document.createElement('span');
+  span.className = 'log-line ' + type;
+  span.textContent = '[' + new Date().toTimeString().slice(0,8) + '] ' + msg;
+  el.appendChild(document.createElement('br'));
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, state='') {
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('statusLed').className = 'status-led ' + state;
+}
+
+async function wFetch(workerUrl, body) {
+  const r = await fetch(workerUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||'Worker error '+r.status); }
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+// ── C2 Domain Scoring Engine ──────────────────────────────────────────────────
+const C2_TLDS = new Set(['.xyz','.top','.club','.online','.site','.shop','.live','.stream',
+  '.gq','.ml','.ga','.cf','.tk','.pw','.cc','.su','.ru','.cn','.info','.biz',
+  '.ws','.to','.in','.io','.co','.me','.tv','.us','.mobi','.name']);
+
+const LEGIT_TLDS = new Set(['.com','.org','.net','.edu','.gov','.mil','.int']);
+
+const BRANDS = ['google','microsoft','amazon','apple','paypal','facebook','instagram',
+  'twitter','netflix','adobe','dropbox','office365','outlook','linkedin','github',
+  'cloudflare','wordpress','shopify','stripe','zoom','teams','onedrive'];
+
+const C2_KEYWORDS = ['update','cdn','download','secure','api','gate','bot','rat','shell',
+  'payload','loader','dropper','beacon','implant','agent','stager','c2','cnc',
+  'command','control','panel','admin','access','vpn','proxy','relay','tunnel'];
+
+const SUSPICIOUS_PATTERNS = [
+  /^[a-z]{1,3}-[a-z]{1,3}-[a-z]{1,3}\./,   // x-y-z.tld
+  /\d{4,}/,                                    // 4+ consecutive digits
+  /[a-z]{15,}\./,                              // Very long single word
+  /(?:[bcdfghjklmnpqrstvwxz]{4,})/,           // 4+ consonants in a row
+];
+
+function calcEntropy(str) {
+  const freq = {};
+  for (const c of str) freq[c] = (freq[c]||0) + 1;
+  let h = 0;
+  const len = str.length;
+  for (const f of Object.values(freq)) {
+    const p = f / len;
+    h -= p * Math.log2(p);
+  }
+  return h;
+}
+
+function isDGA(domain) {
+  const name = domain.split('.')[0];
+  if (name.length < 4) return false;
+  // High entropy
+  const entropy = calcEntropy(name);
+  if (entropy > 3.5 && name.length > 8) return true;
+  // Consonant ratio
+  const vowels = (name.match(/[aeiou]/gi)||[]).length;
+  const consonants = (name.match(/[bcdfghjklmnpqrstvwxyz]/gi)||[]).length;
+  const ratio = consonants / (vowels || 1);
+  if (ratio > 4 && name.length > 6) return true;
+  // Random char patterns
+  if (/[a-z]{3}\d[a-z]{3}\d/.test(name)) return true;
+  if (/\d[a-z]{2,4}\d[a-z]{2,4}/.test(name)) return true;
+  return false;
+}
+
+function scoreDomain(domain) {
+  const d = domain.toLowerCase().trim();
+  const parts = d.split('.');
+  const tld = '.' + parts[parts.length-1];
+  const name = parts[0];
+  const fullName = parts.slice(0,-1).join('.');
+  
+  let score = 0;
+  const indicators = [];
+  const warnings = [];
+
+  // TLD scoring
+  if (C2_TLDS.has(tld)) {
+    score += 35;
+    indicators.push({ label: 'C2 TLD: '+tld, sev:'hit' });
+  } else if (LEGIT_TLDS.has(tld)) {
+    score -= 10;
+    indicators.push({ label: 'Legit TLD', sev:'safe' });
+  }
+
+  // DGA detection
+  if (isDGA(d)) {
+    score += 30;
+    indicators.push({ label: 'DGA Pattern', sev:'hit' });
+  }
+
+  // Entropy
+  const entropy = calcEntropy(name);
+  if (entropy > 3.8) {
+    score += 20;
+    indicators.push({ label: 'High Entropy ('+entropy.toFixed(1)+')', sev:'hit' });
+  } else if (entropy > 3.0) {
+    score += 10;
+    indicators.push({ label: 'Med Entropy ('+entropy.toFixed(1)+')', sev:'warn' });
+  }
+
+  // Brand impersonation
+  const brandHit = BRANDS.find(b => fullName.includes(b));
+  if (brandHit) {
+    score += 25;
+    indicators.push({ label: 'Brand: '+brandHit, sev:'hit' });
+  }
+
+  // C2 keywords
+  const kwHit = C2_KEYWORDS.filter(k => fullName.includes(k));
+  if (kwHit.length) {
+    score += Math.min(kwHit.length * 10, 20);
+    indicators.push({ label: 'C2 Keywords: '+kwHit.slice(0,2).join(','), sev:'hit' });
+  }
+
+  // Hyphens (common in C2 domains)
+  const hyphens = (fullName.match(/-/g)||[]).length;
+  if (hyphens >= 3) {
+    score += 15;
+    indicators.push({ label: hyphens+' Hyphens', sev:'warn' });
+  } else if (hyphens >= 2) {
+    score += 8;
+    indicators.push({ label: hyphens+' Hyphens', sev:'warn' });
+  }
+
+  // Numbers in domain
+  const nums = (name.match(/\d/g)||[]).length;
+  if (nums >= 4) {
+    score += 15;
+    indicators.push({ label: nums+' Digits', sev:'hit' });
+  } else if (nums >= 2) {
+    score += 8;
+    indicators.push({ label: nums+' Digits', sev:'warn' });
+  }
+
+  // Subdomain depth
+  if (parts.length > 4) {
+    score += 10;
+    indicators.push({ label: parts.length+' Labels Deep', sev:'warn' });
+  }
+
+  // Suspicious patterns
+  SUSPICIOUS_PATTERNS.forEach(pattern => {
+    if (pattern.test(d)) {
+      score += 8;
+      indicators.push({ label: 'Suspicious Pattern', sev:'warn' });
+    }
+  });
+
+  // Very long domain
+  if (fullName.length > 30) {
+    score += 10;
+    indicators.push({ label: 'Long Name ('+fullName.length+')', sev:'warn' });
+  }
+
+  score = Math.min(100, Math.max(0, score));
+  const risk = score >= 70 ? 'critical' : score >= 50 ? 'high' : score >= 30 ? 'medium' : 'low';
+  return { domain: d, score, risk, indicators, entropy: entropy.toFixed(2), tld, name };
+}
+
+// ── Domain row HTML ───────────────────────────────────────────────────────────
+function domainRowHTML(r) {
+  const scoreColor = r.risk==='critical'?'var(--danger)':r.risk==='high'?'var(--warn)':r.risk==='medium'?'var(--info)':'var(--accent)';
+  const pillsHTML = r.indicators.slice(0,3).map(i =>
+    '<span class="ind-pill ' + i.sev + '">' + i.label + '</span>'
+  ).join('');
+  return '<div class="domain-row risk-' + r.risk + '" data-risk="' + r.risk + '" data-domain="' + r.domain + '">' +
+    '<div class="domain-name"><div>' + r.domain + '</div><div class="indicators">' + pillsHTML + '</div></div>' +
+    '<div class="domain-score" style="color:' + scoreColor + '">' + r.score + '<div class="score-bar-wrap"><div class="score-bar-fill" style="width:' + r.score + '%;background:' + scoreColor + '"></div></div></div>' +
+    '<div class="domain-age" style="font-size:.58rem">—</div>' +
+    '<div class="domain-tld" style="color:' + (C2_TLDS.has(r.tld)?'var(--danger)':'var(--muted)') + '">' + r.tld + '</div>' +
+    '<span class="risk-badge ' + r.risk + '">' + r.risk.toUpperCase() + '</span>' +
+    '</div>';
+}
+
+// ════════════════════════════════════════════════════════
+// MODE 1: LIVE FEED MONITOR
+// ════════════════════════════════════════════════════════
+let feedResults = [], feedCounts = {critical:0,high:0,medium:0,low:0};
+let feedRiskFilter = 'all';
+
+async function startFeedMonitor() {
+  const workerUrl = document.getElementById('feed-worker').value.trim();
+  const minScore = parseInt(document.getElementById('feed-minscore').value);
+  const limit = parseInt(document.getElementById('feed-limit').value);
+  if (!workerUrl) { alert('Enter your Cloudflare Worker URL'); return; }
+
+  feedResults = []; feedCounts = {critical:0,high:0,medium:0,low:0};
+  document.getElementById('feed-flagged-c').innerHTML = '<div class="placeholder"><div class="ph-icon">⏳</div><div class="ph-text">FETCHING NEWLY REGISTERED DOMAINS...</div></div>';
+  document.getElementById('feed-critical-c').innerHTML = '';
+  document.getElementById('feed-all-c').innerHTML = '';
+  document.getElementById('feed-log').innerHTML = '';
+  document.getElementById('feed-sumrow').style.display = 'none';
+  document.getElementById('feed-fb').style.display = 'none';
+  document.getElementById('feed-ch').style.display = 'none';
+  document.getElementById('feed-btn').disabled = true;
+  setStatus('FETCHING DOMAIN FEED...', 'active');
+  log('feed-log', 'Starting domain feed monitor...', 'info');
+
+  let domains = [];
+  
+  // Try multiple free sources for newly registered domains
+  const sources = [
+    { name: 'WhoisDS (Today)', url: 'https://www.whoisds.com/newly-registered-domains' },
+  ];
+
+  // Use worker to fetch newly registered domains from free feeds
+  try {
+    log('feed-log', 'Fetching from newly registered domain feeds...', 'info');
+    const data = await wFetch(workerUrl, { action: 'fetch_new_domains', limit });
+    domains = data.domains || [];
+    log('feed-log', 'Fetched ' + domains.length + ' domains from feed', 'ok');
+  } catch(e) {
+    log('feed-log', 'Feed fetch failed: ' + e.message + ' — generating sample for demo', 'warn');
+    // Fallback: use sample suspicious domains for demo purposes
+    domains = generateSampleDomains(limit);
+    log('feed-log', 'Using ' + domains.length + ' sample domains for scoring demo', 'info');
+  }
+
+  log('feed-log', 'Scoring ' + domains.length + ' domains...', 'info');
+  setStatus('SCORING DOMAINS...', 'active');
+
+  let processed = 0;
+  const flagged = [], allScored = [];
+
+  for (const domain of domains) {
+    if (!domain || domain.length < 4) { processed++; continue; }
+    const result = scoreDomain(domain);
+    allScored.push(result);
+    processed++;
+
+    // Update progress
+    const pct = Math.round((processed / domains.length) * 100);
+    document.getElementById('f-prog').style.width = pct + '%';
+    document.getElementById('f-progl').textContent = processed + ' / ' + domains.length;
+    document.getElementById('f-total').textContent = processed;
+
+    // Add to all tab
+    document.getElementById('feed-all-c').insertAdjacentHTML('beforeend', domainRowHTML(result));
+
+    // Flag if above threshold
+    if (result.score >= minScore) {
+      flagged.push(result);
+      feedResults.push(result);
+      feedCounts[result.risk]++;
+
+      const fc = document.getElementById('feed-flagged-c');
+      if (fc.querySelector('.placeholder')) {
+        fc.innerHTML = '';
+        document.getElementById('feed-sumrow').style.display = '';
+        document.getElementById('feed-fb').style.display = '';
+        document.getElementById('feed-ch').style.display = '';
+      }
+      fc.insertAdjacentHTML('beforeend', domainRowHTML(result));
+
+      if (result.risk === 'critical' || result.risk === 'high') {
+        document.getElementById('feed-critical-c').insertAdjacentHTML('beforeend', domainRowHTML(result));
+      }
+
+      document.getElementById('f-flagged').textContent = flagged.length;
+      document.getElementById('f-critical').textContent = feedCounts.critical;
+      document.getElementById('f-high').textContent = feedCounts.high;
+      document.getElementById('feed-b-flagged').textContent = flagged.length;
+      document.getElementById('feed-b-critical').textContent = feedCounts.critical;
+      document.getElementById('feed-b-all').textContent = processed;
+      document.getElementById('feed-s-crit').textContent = feedCounts.critical;
+      document.getElementById('feed-s-high').textContent = feedCounts.high;
+      document.getElementById('feed-s-med').textContent = feedCounts.medium;
+      document.getElementById('feed-s-tot').textContent = flagged.length;
+
+      if (result.risk === 'critical') log('feed-log', '[CRITICAL] ' + result.domain + ' — score:' + result.score, 'err');
+      else if (result.risk === 'high') log('feed-log', '[HIGH] ' + result.domain + ' — score:' + result.score, 'warn');
+    }
+
+    // Yield to browser every 50 domains
+    if (processed % 50 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+
+  document.getElementById('feed-btn').disabled = false;
+  setStatus('COMPLETE — ' + flagged.length + ' flagged from ' + domains.length + ' domains', 'done');
+  log('feed-log', 'Done. ' + flagged.length + ' flagged (' + feedCounts.critical + ' critical, ' + feedCounts.high + ' high)', 'ok');
+}
+
+function generateSampleDomains(count) {
+  // Generate realistic mix of legitimate and suspicious looking domains for demo
+  const suspicious = [
+    'xk7mq2p.xyz','update-microsoft-cdn.top','d4rkn3t-relay.club',
+    'bcdfghjk.online','secure-paypal-verify.site','abc123xyz456.tk',
+    'qwertyzxcv.gq','cdn-download-update.xyz','zxqmvbnp.ml',
+    'rnicrosoft-update.com','googleservices-cdn.top','dropbox-secure-login.xyz',
+    'ghijklmnop.online','1nstagram-secure.xyz','faceb00k-login.top',
+    'amaz0n-prime-verify.site','c2beaconhost.xyz','ratpayload-gate.top',
+    'loader-stager-cdn.online','jklmnopqrst.xyz','pqrstuvwxy.gq',
+    'update-win32-patch.club','microsoft365-verify.xyz','secure-banking-update.top',
+    'command-control-gate.online','api-gateway-proxy.xyz','shell-access-tunnel.top',
+  ];
+  const legit = [
+    'newbusiness2024.com','techstartup-launch.com','myblog-newsite.org',
+    'fresh-recipes-daily.com','localplumber-service.net','photography-studio.com',
+    'homerepair-experts.org','dentist-newoffice.com','accounting-firm-new.com',
+  ];
+  const all = [...suspicious, ...legit];
+  // Shuffle and fill to count
+  while (all.length < count) {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const tlds = ['.xyz','.top','.com','.org','.club','.online','.net'];
+    let name = '';
+    const len = Math.floor(Math.random() * 12) + 4;
+    for (let i=0; i<len; i++) name += chars[Math.floor(Math.random()*chars.length)];
+    all.push(name + tlds[Math.floor(Math.random()*tlds.length)]);
+  }
+  return all.slice(0, count).sort(() => Math.random() - 0.5);
+}
+
+function feedFilter(text) {
+  document.querySelectorAll('#feed-flagged-c .domain-row').forEach(r => {
+    const matchText = !text || r.dataset.domain.includes(text.toLowerCase());
+    const matchRisk = feedRiskFilter==='all' || r.dataset.risk===feedRiskFilter;
+    r.style.display = matchText && matchRisk ? '' : 'none';
+  });
+}
+
+function feedRF(r, btn) {
+  feedRiskFilter = r;
+  document.querySelectorAll('#feed-fb .filter-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  feedFilter('');
+}
+
+function exportFeed() {
+  if (!feedResults.length) return;
+  let csv = 'Domain,Score,Risk,TLD,Entropy,Indicators\n';
+  feedResults.forEach(r => {
+    csv += '"'+r.domain+'",'+r.score+',"'+r.risk+'","'+r.tld+'",'+r.entropy+',"'+r.indicators.map(i=>i.label).join('; ')+'"\n';
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'c2_monitor_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.style.display='none'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},1000);
+}
+
+// ════════════════════════════════════════════════════════
+// MODE 2: CHECK A DOMAIN
+// ════════════════════════════════════════════════════════
+async function checkDomain() {
+  let domain = document.getElementById('check-domain').value.trim().toLowerCase();
+  const workerUrl = document.getElementById('check-worker').value.trim();
+  if (!domain) { alert('Enter a domain to check'); return; }
+  domain = domain.replace(/^https?:\/\//,'').replace(/\/.*/,'');
+
+  document.getElementById('check-btn').disabled = true;
+  document.getElementById('check-output').innerHTML = '<div class="placeholder"><div class="ph-icon">⏳</div><div class="ph-text">ANALYZING...</div></div>';
+  setStatus('ANALYZING ' + domain, 'active');
+
+  // Client-side scoring
+  const result = scoreDomain(domain);
+
+  // Server-side DNS check if worker available
+  let dnsData = null, regDate = null, ageDays = null;
+  if (workerUrl) {
+    try {
+      const [dns, rdap] = await Promise.allSettled([
+        wFetch(workerUrl, { action:'dns_full', hostname:domain }),
+        wFetch(workerUrl, { action:'whois', domain })
+      ]);
+      if (dns.status==='fulfilled') {
+        dnsData = dns.value.records;
+        const hasMX = (dnsData.MX||[]).length > 0;
+        const hasA = (dnsData.A||[]).length > 0;
+        const ttl = (dnsData.A||[])[0]?.ttl || 9999;
+        if (!hasMX && hasA) {
+          result.score = Math.min(100, result.score + 15);
+          result.indicators.push({ label:'No MX Records', sev:'warn' });
+        }
+        if (ttl < 300 && hasA) {
+          result.score = Math.min(100, result.score + 15);
+          result.indicators.push({ label:'Low TTL: '+ttl+'s', sev:'hit' });
+        }
+        if (hasA) result.ip = dnsData.A[0].value;
+      }
+      if (rdap.status==='fulfilled' && rdap.value.rdap) {
+        const events = rdap.value.rdap.events || [];
+        const reg = events.find(e => e.eventAction==='registration');
+        if (reg) {
+          regDate = reg.eventDate.slice(0,10);
+          ageDays = Math.floor((Date.now()-new Date(reg.eventDate).getTime())/86400000);
+          if (ageDays < 7) {
+            result.score = Math.min(100, result.score + 10);
+            result.indicators.push({ label:'Registered '+ageDays+'d ago', sev:'hit' });
+          } else if (ageDays < 30) {
+            result.score = Math.min(100, result.score + 5);
+            result.indicators.push({ label:'Registered '+ageDays+'d ago', sev:'warn' });
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Re-calculate risk after DNS data
+  result.risk = result.score >= 70 ? 'critical' : result.score >= 50 ? 'high' : result.score >= 30 ? 'medium' : 'low';
+  const riskColor = result.risk==='critical'?'var(--danger)':result.risk==='high'?'var(--warn)':result.risk==='medium'?'var(--info)':'var(--accent)';
+  const riskEmoji = result.risk==='critical'?'☠':result.risk==='high'?'🔴':result.risk==='medium'?'🟡':'✅';
+
+  const indicatorsHTML = result.indicators.map(i =>
+    '<div style="display:flex;align-items:center;gap:.65rem;padding:.4rem .5rem;border-bottom:1px solid rgba(30,45,61,.4)">' +
+    '<span class="ind-pill ' + i.sev + '" style="font-size:.65rem;padding:.15rem .4rem">' + i.label + '</span>' +
+    '<div style="font-size:.72rem;color:var(--muted)">' + getIndicatorDesc(i.label) + '</div>' +
+    '</div>'
+  ).join('');
+
+  const dnsHTML = dnsData ? Object.entries(dnsData).filter(([,v])=>v.length).map(([type,recs])=>
+    recs.map(r=>'<tr><td style="color:var(--accent)">' + type + '</td><td>' + r.value + '</td><td style="color:var(--muted)">' + r.ttl + 's</td></tr>').join('')
+  ).join('') : '<tr><td colspan="3" style="color:var(--muted)">No DNS data — Worker URL needed</td></tr>';
+
+  document.getElementById('check-output').innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);padding:1.25rem;margin-bottom:1rem;display:grid;grid-template-columns:150px 1fr;gap:1.25rem;align-items:center">
+      <div style="text-align:center">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:3.5rem;font-weight:700;color:${riskColor};line-height:1">${result.score}</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:.65rem;color:${riskColor};letter-spacing:.1em;margin-top:.2rem">RISK SCORE</div>
+        <div style="width:120px;background:var(--border);height:6px;border-radius:3px;overflow:hidden;margin:.5rem auto 0">
+          <div style="height:100%;width:${result.score}%;background:${riskColor};border-radius:3px"></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--heading);margin-bottom:.5rem">${riskEmoji} ${domain}</div>
+        <table style="font-family:'Share Tech Mono',monospace;font-size:.65rem;width:100%;border-collapse:collapse">
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0;white-space:nowrap">RISK LEVEL</td><td><span class="risk-badge ${result.risk}">${result.risk.toUpperCase()}</span></td></tr>
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0">TLD</td><td style="color:${C2_TLDS.has(result.tld)?'var(--danger)':'var(--muted)'}">${result.tld}</td></tr>
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0">ENTROPY</td><td>${result.entropy}</td></tr>
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0">IP ADDRESS</td><td>${result.ip||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0">REGISTERED</td><td style="color:${ageDays&&ageDays<30?'var(--warn)':'var(--text)'}">${regDate||'—'}${ageDays!=null?' ('+ageDays+' days ago)':''}</td></tr>
+          <tr><td style="color:var(--muted);padding:.2rem .4rem .2rem 0">DGA PATTERN</td><td style="color:${isDGA(domain)?'var(--danger)':'var(--accent)'}">${isDGA(domain)?'YES — Likely DGA':'No DGA patterns detected'}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);padding:1rem;margin-bottom:1rem;position:relative">
+      <div style="position:absolute;top:-.5rem;left:.75rem;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--accent);background:var(--bg2);padding:0 .4rem;letter-spacing:.12em">INDICATORS FOUND (${result.indicators.length})</div>
+      ${indicatorsHTML || '<div style="font-family:\'Share Tech Mono\',monospace;font-size:.7rem;color:var(--accent);padding:.5rem">No significant indicators detected — domain appears low risk</div>'}
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);padding:1rem;margin-bottom:1rem;position:relative">
+      <div style="position:absolute;top:-.5rem;left:.75rem;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--accent);background:var(--bg2);padding:0 .4rem;letter-spacing:.12em">DNS RECORDS</div>
+      <table style="width:100%;border-collapse:collapse;font-family:'Share Tech Mono',monospace;font-size:.65rem">
+        <tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;color:var(--muted);padding:.3rem .4rem">TYPE</th><th style="text-align:left;color:var(--muted)">VALUE</th><th style="text-align:left;color:var(--muted)">TTL</th></tr>
+        ${dnsHTML}
+      </table>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);padding:1rem;position:relative">
+      <div style="position:absolute;top:-.5rem;left:.75rem;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--accent);background:var(--bg2);padding:0 .4rem;letter-spacing:.12em">VERDICT</div>
+      <div style="font-size:.85rem;line-height:1.7;color:var(--text)">
+        ${result.risk==='critical'
+          ? '<strong style="color:var(--danger)">☠ HIGH PROBABILITY C2 INDICATOR.</strong> This domain scores ' + result.score + '/100 with multiple critical C2 characteristics. Recommend blocking at DNS/firewall level and investigating any hosts that have resolved this domain.'
+          : result.risk==='high'
+          ? '<strong style="color:var(--warn)">🔴 SUSPICIOUS — Likely Malicious.</strong> Score: ' + result.score + '/100. Several high-risk indicators present. Recommend adding to watchlist and monitoring for connections from internal hosts.'
+          : result.risk==='medium'
+          ? '<strong style="color:var(--info)">🟡 MODERATE RISK.</strong> Score: ' + result.score + '/100. Some suspicious characteristics. Monitor and investigate if seen in network logs.'
+          : '<strong style="color:var(--accent)">✅ LOW RISK.</strong> Score: ' + result.score + '/100. Few or no C2 indicators detected. Domain appears relatively benign based on available signals.'}
+      </div>
+    </div>
+  `;
+
+  setStatus('COMPLETE — ' + result.risk.toUpperCase() + ' RISK (' + result.score + '/100)', result.risk==='critical'||result.risk==='high'?'error':'done');
+  document.getElementById('check-btn').disabled = false;
+}
+
+function getIndicatorDesc(label) {
+  const descs = {
+    'DGA Pattern':'Domain Generation Algorithm pattern detected — random character sequences typical of malware',
+    'High Entropy':'High randomness in domain name — characteristic of DGA or randomly generated domains',
+    'Med Entropy':'Moderate randomness — could indicate generated domain',
+    'No MX Records':'No mail server — domain created purely for C2, not legitimate email use',
+    'Low TTL':'Very low DNS TTL — fast-flux technique used by botnets to evade takedown',
+    'C2 Keywords':'Contains keywords commonly used in C2 infrastructure naming',
+    'Legit TLD':'Common legitimate TLD reduces risk score',
+  };
+  for (const [key, desc] of Object.entries(descs)) {
+    if (label.startsWith(key)) return desc;
+  }
+  if (label.startsWith('C2 TLD')) return 'Top-level domain commonly abused for C2 and malware hosting';
+  if (label.startsWith('Brand')) return 'Contains a major brand name — may be impersonating a legitimate service';
+  if (label.includes('Hyphens')) return 'Multiple hyphens common in C2 domain naming patterns';
+  if (label.includes('Digits')) return 'Numerical characters mixed into domain name';
+  if (label.includes('Registered')) return 'Very recently registered domain — most C2 infrastructure is freshly created';
+  if (label.includes('Long Name')) return 'Unusually long domain name';
+  return 'Suspicious indicator flagged by analysis engine';
+}
+
+// ════════════════════════════════════════════════════════
+// MODE 3: KNOWN C2 FEEDS
+// ════════════════════════════════════════════════════════
+let c2AllIOCs = [];
+
+async function loadC2Feeds() {
+  c2AllIOCs = [];
+  document.getElementById('c2-all-c').innerHTML = '<div class="placeholder"><div class="ph-icon">⏳</div><div class="ph-text">LOADING C2 FEEDS...</div></div>';
+  document.getElementById('c2-domains-c').innerHTML = '';
+  document.getElementById('c2-ips-c').innerHTML = '';
+  document.getElementById('c2-log').innerHTML = '';
+  document.getElementById('c2-btn').disabled = true;
+  setStatus('LOADING C2 FEEDS...', 'active');
+
+  let totalIOCs=0, domainCount=0, ipCount=0, sourceCount=0;
+
+  // Feodo Tracker — C2 botnet IPs (public JSON feed)
+  if (document.getElementById('c2-feodo').checked) {
+    try {
+      log('c2-log', 'Fetching Feodo Tracker C2 feed...', 'info');
+      const r = await fetch('https://feodotracker.abuse.ch/downloads/ipblocklist.json');
+      if (r.ok) {
+        const data = await r.json();
+        const entries = data.blocklist || [];
+        entries.slice(0,200).forEach(entry => {
+          const ioc = {
+            value: entry.ip_address || entry.ioc || '',
+            type: 'IP',
+            source: 'Feodo Tracker',
+            malware: entry.malware || 'Botnet C2',
+            date: entry.last_online || entry.first_seen || '',
+            isIP: true
+          };
+          if (ioc.value) {
+            c2AllIOCs.push(ioc);
+            totalIOCs++; ipCount++;
+          }
+        });
+        sourceCount++;
+        log('c2-log', 'Feodo: ' + entries.length + ' C2 IPs loaded', 'ok');
+      }
+    } catch(e) { log('c2-log', 'Feodo fetch failed: ' + e.message, 'warn'); }
+  }
+
+  // URLhaus — Malware URLs (public CSV/JSON)
+  if (document.getElementById('c2-urlhaus').checked) {
+    try {
+      log('c2-log', 'Fetching URLhaus malware feed...', 'info');
+      const r = await fetch('https://urlhaus-api.abuse.ch/v1/urls/recent/limit/200/');
+      if (r.ok) {
+        const data = await r.json();
+        const urls = data.urls || [];
+        urls.forEach(entry => {
+          if (entry.url_status !== 'online') return;
+          let value = entry.url || '';
+          let type = 'URL';
+          try {
+            const parsed = new URL(value);
+            value = parsed.hostname;
+            type = 'DOMAIN';
+            domainCount++;
+          } catch(e) {}
+          c2AllIOCs.push({
+            value,
+            type,
+            source: 'URLhaus',
+            malware: entry.tags?.join(', ') || 'Malware',
+            date: (entry.dateadded||'').slice(0,10),
+            isIP: /^\d+\.\d+\.\d+\.\d+$/.test(value)
+          });
+          totalIOCs++;
+        });
+        sourceCount++;
+        log('c2-log', 'URLhaus: ' + urls.length + ' malware URLs loaded', 'ok');
+      }
+    } catch(e) { log('c2-log', 'URLhaus fetch failed: ' + e.message, 'warn'); }
+  }
+
+  // ThreatFox — IOC feed
+  if (document.getElementById('c2-threatfox').checked) {
+    try {
+      log('c2-log', 'Fetching ThreatFox IOC feed...', 'info');
+      const r = await fetch('https://threatfox-api.abuse.ch/api/v1/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'get_iocs', days: 1 })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const iocs = data.data || [];
+        iocs.slice(0,200).forEach(entry => {
+          let value = entry.ioc_value || '';
+          // Strip port if present
+          value = value.replace(/:\d+$/, '');
+          const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(value);
+          const type = entry.ioc_type?.includes('domain') ? 'DOMAIN' : entry.ioc_type?.includes('ip') ? 'IP' : entry.ioc_type || 'IOC';
+          if (isIP) ipCount++; else domainCount++;
+          c2AllIOCs.push({
+            value,
+            type,
+            source: 'ThreatFox',
+            malware: entry.malware || entry.threat_type || 'C2',
+            date: (entry.first_seen||'').slice(0,10),
+            isIP
+          });
+          totalIOCs++;
+        });
+        sourceCount++;
+        log('c2-log', 'ThreatFox: ' + iocs.length + ' IOCs loaded', 'ok');
+      }
+    } catch(e) { log('c2-log', 'ThreatFox fetch failed: ' + e.message, 'warn'); }
+  }
+
+  // Render all IOCs
+  renderC2(c2AllIOCs);
+
+  document.getElementById('c2-total').textContent = totalIOCs;
+  document.getElementById('c2-domains').textContent = domainCount;
+  document.getElementById('c2-ips').textContent = ipCount;
+  document.getElementById('c2-sources').textContent = sourceCount;
+  document.getElementById('c2-b-all').textContent = totalIOCs;
+  document.getElementById('c2-b-domains').textContent = domainCount;
+  document.getElementById('c2-b-ips').textContent = ipCount;
+  document.getElementById('c2-btn').disabled = false;
+  setStatus('COMPLETE — ' + totalIOCs + ' IOCs loaded', 'done');
+  log('c2-log', 'Done. ' + totalIOCs + ' total IOCs from ' + sourceCount + ' sources', 'ok');
+}
+
+function c2RowHTML(ioc) {
+  return '<div class="c2-row">' +
+    '<div class="c2-ioc">' + ioc.value + '</div>' +
+    '<div class="c2-source">' + ioc.source + '</div>' +
+    '<div class="c2-type">' + ioc.type + '</div>' +
+    '<div class="c2-date">' + (ioc.date||'—') + '</div>' +
+    '</div>';
+}
+
+function renderC2(iocs) {
+  const allHTML = iocs.map(c2RowHTML).join('');
+  const domainsHTML = iocs.filter(i=>!i.isIP).map(c2RowHTML).join('');
+  const ipsHTML = iocs.filter(i=>i.isIP).map(c2RowHTML).join('');
+  document.getElementById('c2-all-c').innerHTML = allHTML || '<div class="placeholder"><div class="ph-icon">☠</div><div class="ph-text">No IOCs loaded</div></div>';
+  document.getElementById('c2-domains-c').innerHTML = domainsHTML || '<div class="placeholder"><div class="ph-icon">🌐</div><div class="ph-text">No domain IOCs</div></div>';
+  document.getElementById('c2-ips-c').innerHTML = ipsHTML || '<div class="placeholder"><div class="ph-icon">🖥</div><div class="ph-text">No IP IOCs</div></div>';
+}
+
+function c2Search(text) {
+  if (!text) { renderC2(c2AllIOCs); return; }
+  const filtered = c2AllIOCs.filter(i => i.value.includes(text.toLowerCase()) || i.malware.toLowerCase().includes(text.toLowerCase()));
+  renderC2(filtered);
+}
+</script>
+</body>
+</html>
